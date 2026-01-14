@@ -10,7 +10,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@apollo/server": "^5.2.0",
+    "@as-integrations/aws-lambda": "^4.0.1",
     "@types/aws-lambda": "^8.10.159",
+    "graphql": "^16.12.0",
     "typescript": "^5.9.3"
   },
   "devDependencies": {

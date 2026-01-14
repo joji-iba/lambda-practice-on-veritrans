@@ -1,60 +1,97 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handler = void 0;
+const server_1 = require("@apollo/server");
+const aws_lambda_1 = require("@as-integrations/aws-lambda");
 const VERITRANS_ENDPOINT = 'https://api3.veritrans.co.jp/4gtoken';
-const handler = async (event) => {
-    try {
-        // ① クライアントから受け取る（例）
-        const body = JSON.parse(event.body ?? '{}');
-        const payload = {
-            card_number: body.card_number,
-            card_expire: body.card_expire,
-            security_code: body.security_code,
-            cardholder_name: body.cardholder_name,
-            token_api_key: process.env.VERITRANS_TOKEN_API_KEY,
-            lang: 'ja',
-        };
-        // ② Veritrans に POST
-        const response = await fetch(VERITRANS_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-        const result = await response.json();
-        // ③ エラーハンドリング
-        if (!response.ok) {
-            return {
-                statusCode: response.status,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: response.message || 'Error from Veritrans',
-                    veritrans: result,
-                }),
-            };
-        }
-        // ④ トークンのみ返す（カード情報は返さない）
-        return {
-            statusCode: 200,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: result.token,
-                status: result.status,
-                code: result.code,
-                message: result.message,
-            }),
-        };
+// GraphQL スキーマ定義
+const typeDefs = `#graphql
+  # 入力型: カード情報
+  input CardInput {
+    cardNumber: String!
+    cardExpire: String!
+    securityCode: String
+    cardholderName: String
+  }
+
+  # 出力型: トークンレスポンス
+  type TokenResponse {
+    token: String
+    status: String
+    code: String
+    message: String
+  }
+
+  # エラー型
+  type TokenError {
+    message: String!
+    veritransCode: String
+    veritransMessage: String
+  }
+
+  # Union型: 成功 or エラー
+  union TokenResult = TokenResponse | TokenError
+
+  type Query {
+    # ヘルスチェック用
+    health: String
+  }
+
+  type Mutation {
+    # MDKトークンを取得
+    getMdkToken(card: CardInput!): TokenResponse!
+  }
+`;
+// Veritrans API を呼び出す関数
+async function fetchVeritransToken(card) {
+    const payload = {
+        card_number: card.cardNumber,
+        card_expire: card.cardExpire,
+        security_code: card.securityCode,
+        cardholder_name: card.cardholderName,
+        token_api_key: process.env.VERITRANS_TOKEN_API_KEY,
+        lang: 'ja',
+    };
+    const response = await fetch(VERITRANS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+        throw new Error(result.message || 'Error from Veritrans');
     }
-    catch (error) {
-        console.error('Veritrans error', error);
-        return {
-            statusCode: 500,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                message: 'Internal Server Error',
-            }),
-        };
-    }
+    return result;
+}
+// リゾルバー定義
+const resolvers = {
+    Query: {
+        health: () => 'OK',
+    },
+    Mutation: {
+        getMdkToken: async (_, { card }) => {
+            try {
+                const result = await fetchVeritransToken(card);
+                return {
+                    token: result.token,
+                    status: result.status,
+                    code: result.code,
+                    message: result.message,
+                };
+            }
+            catch (error) {
+                console.error('Veritrans error:', error);
+                throw error;
+            }
+        },
+    },
 };
-exports.handler = handler;
+// Apollo Server インスタンス作成
+const server = new server_1.ApolloServer({
+    typeDefs,
+    resolvers,
+});
+// Lambda ハンドラーをエクスポート
+exports.handler = (0, aws_lambda_1.startServerAndCreateLambdaHandler)(server, aws_lambda_1.handlers.createAPIGatewayProxyEventV2RequestHandler());
