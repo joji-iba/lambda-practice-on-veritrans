@@ -1,0 +1,16 @@
+{
+  "name": "veritrans-token-lambda",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/aws-lambda": "^8.10.159",
+    "typescript": "^5.9.3"
+  }
+}
